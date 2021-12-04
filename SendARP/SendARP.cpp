@@ -1,20 +1,114 @@
-﻿// SendARP.cpp : このファイルには 'main' 関数が含まれています。プログラム実行の開始と終了がそこで行われます。
-//
+﻿#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
 
-#include <iostream>
+#include <winsock2.h>
+#include <iphlpapi.h>
+#include <stdio.h>
+#include <stdlib.h>
 
-int main()
+#pragma comment(lib, "iphlpapi.lib")
+#pragma comment(lib, "ws2_32.lib")
+
+void usage(char* pname)
 {
-    std::cout << "Hello World!\n";
+    printf("Usage: %s [options] ip-address\n", pname);
+    printf("\t -h \t\thelp\n");
+    printf("\t -l length \tMAC physical address length to set\n");
+    printf("\t -s src-ip \tsource IP address\n");
+    exit(1);
 }
 
-// プログラムの実行: Ctrl + F5 または [デバッグ] > [デバッグなしで開始] メニュー
-// プログラムのデバッグ: F5 または [デバッグ] > [デバッグの開始] メニュー
+int __cdecl main(int argc, char** argv)
+{
+    DWORD dwRetVal;
+    IPAddr DestIp = 0;
+    IPAddr SrcIp = 0;       /* default for src ip */
+    ULONG MacAddr[2];       /* for 6-byte hardware addresses */
+    ULONG PhysAddrLen = 6;  /* default to length of six bytes */
 
-// 作業を開始するためのヒント: 
-//    1. ソリューション エクスプローラー ウィンドウを使用してファイルを追加/管理します 
-//   2. チーム エクスプローラー ウィンドウを使用してソース管理に接続します
-//   3. 出力ウィンドウを使用して、ビルド出力とその他のメッセージを表示します
-//   4. エラー一覧ウィンドウを使用してエラーを表示します
-//   5. [プロジェクト] > [新しい項目の追加] と移動して新しいコード ファイルを作成するか、[プロジェクト] > [既存の項目の追加] と移動して既存のコード ファイルをプロジェクトに追加します
-//   6. 後ほどこのプロジェクトを再び開く場合、[ファイル] > [開く] > [プロジェクト] と移動して .sln ファイルを選択します
+    char* DestIpString = NULL;
+    char* SrcIpString = NULL;
+
+    BYTE* bPhysAddr;
+    unsigned int i;
+
+    if (argc > 1) {
+        for (i = 1; i < (unsigned int)argc; i++) {
+            if ((argv[i][0] == '-') || (argv[i][0] == '/')) {
+                switch (tolower(argv[i][1])) {
+                case 'l':
+                    PhysAddrLen = (ULONG)atol(argv[++i]);
+                    break;
+                case 's':
+                    SrcIpString = argv[++i];
+                    SrcIp = inet_addr(SrcIpString);
+                    break;
+                case 'h':
+                default:
+                    usage(argv[0]);
+                    break;
+                }               /* end switch */
+            }
+            else
+                DestIpString = argv[i];
+        }                       /* end for */
+    }
+    else
+        usage(argv[0]);
+
+    if (DestIpString == NULL || DestIpString[0] == '\0')
+        usage(argv[0]);
+
+    DestIp = inet_addr(DestIpString);
+
+    memset(&MacAddr, 0xff, sizeof(MacAddr));
+
+    printf("Sending ARP request for IP address: %s\n", DestIpString);
+
+    dwRetVal = SendARP(DestIp, SrcIp, &MacAddr, &PhysAddrLen);
+
+    if (dwRetVal == NO_ERROR) {
+        bPhysAddr = (BYTE*)&MacAddr;
+        if (PhysAddrLen) {
+            for (i = 0; i < (int)PhysAddrLen; i++) {
+                if (i == (PhysAddrLen - 1))
+                    printf("%.2X\n", (int)bPhysAddr[i]);
+                else
+                    printf("%.2X-", (int)bPhysAddr[i]);
+            }
+        }
+        else
+            printf
+            ("Warning: SendArp completed successfully, but returned length=0\n");
+
+    }
+    else {
+        printf("Error: SendArp failed with error: %d", dwRetVal);
+        switch (dwRetVal) {
+        case ERROR_GEN_FAILURE:
+            printf(" (ERROR_GEN_FAILURE)\n");
+            break;
+        case ERROR_INVALID_PARAMETER:
+            printf(" (ERROR_INVALID_PARAMETER)\n");
+            break;
+        case ERROR_INVALID_USER_BUFFER:
+            printf(" (ERROR_INVALID_USER_BUFFER)\n");
+            break;
+        case ERROR_BAD_NET_NAME:
+            printf(" (ERROR_GEN_FAILURE)\n");
+            break;
+        case ERROR_BUFFER_OVERFLOW:
+            printf(" (ERROR_BUFFER_OVERFLOW)\n");
+            break;
+        case ERROR_NOT_FOUND:
+            printf(" (ERROR_NOT_FOUND)\n");
+            break;
+        default:
+            printf("\n");
+            break;
+        }
+    }
+
+    return 0;
+}
